@@ -14,6 +14,10 @@ from torch.optim import AdamW
 from torch.cuda.amp import GradScaler, autocast
 
 
+
+
+
+
 # Load your dataset (replace with actual file paths or data sources)
 train_data = pd.read_csv("bert_data\\train.csv")
 dev_data = pd.read_csv("bert_data\\dev.csv")
@@ -28,7 +32,7 @@ train_dataset = Dataset.from_pandas(train_data)
 dev_dataset = Dataset.from_pandas(dev_data)
 test_dataset = Dataset.from_pandas(test_data)
 
-tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+tokenizer = BertTokenizer.from_pretrained("bert-base-cased")
 
 def tokenize_function(examples):
     return tokenizer(examples["text"], padding="max_length", truncation=True)
@@ -37,13 +41,84 @@ train_dataset = train_dataset.map(tokenize_function, batched=True)
 train_dataset = train_dataset.rename_column("label", "labels")  # Rename 'label' to 'labels'
 train_dataset.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
 
+dev_dataset = dev_dataset.map(tokenize_function, batched=True)
+dev_dataset = dev_dataset.rename_column("label", "labels")  # Rename 'label' to 'labels'
+dev_dataset.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
+
+test_dataset = test_dataset.map(tokenize_function, batched=True)
+test_dataset = test_dataset.rename_column("label", "labels")  # Rename 'label' to 'labels'
+test_dataset.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
+
+tokenizer = BertTokenizer.from_pretrained("bert-base-cased")
+
+# Use a data collator for proper batching
+data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
+
+train_loader = DataLoader(train_dataset, shuffle=True, batch_size=16, collate_fn=data_collator)
+dev_loader = DataLoader(dev_dataset, batch_size=16, collate_fn=data_collator)
+test_loader = DataLoader(test_dataset, batch_size=16, collate_fn=data_collator)
+
+# Load the saved model and tokenizer
+saved_model_dir = "saved_cased_model"
+model = BertForSequenceClassification.from_pretrained(saved_model_dir)
+tokenizer = BertTokenizer.from_pretrained(saved_model_dir)
+
+# Move the model to the appropriate device
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+model.to(device)
+
+# Example: Retest on the test dataset
+model.eval()
+all_predictions = []
+all_labels = []
+
+with torch.no_grad():
+    for batch in test_loader:
+        inputs = {k: v.to(device) for k, v in batch.items() if k in ["input_ids", "attention_mask", "labels"]}
+        outputs = model(**inputs)
+        predictions = torch.argmax(outputs.logits, dim=-1)
+        all_predictions.extend(predictions.cpu().numpy())
+        all_labels.extend(batch["labels"].cpu().numpy())
+
+from sklearn.metrics import classification_report
+print(classification_report(all_labels, all_predictions))
+
+
+
+"""
+# Load your dataset (replace with actual file paths or data sources)
+train_data = pd.read_csv("bert_data\\train.csv")
+dev_data = pd.read_csv("bert_data\\dev.csv")
+test_data = pd.read_csv("bert_data\\test.csv")
+
+train_data["label"] = train_data["label"].astype(int)
+dev_data["label"] = dev_data["label"].astype(int)
+test_data["label"] = test_data["label"].astype(int)
+
+# Convert to Hugging Face Dataset format
+train_dataset = Dataset.from_pandas(train_data)
+dev_dataset = Dataset.from_pandas(dev_data)
+test_dataset = Dataset.from_pandas(test_data)
+
+tokenizer = BertTokenizer.from_pretrained("bert-base-cased")
+
+def tokenize_function(examples):
+    return tokenizer(examples["text"], padding="max_length", truncation=True)
 
 train_dataset = train_dataset.map(tokenize_function, batched=True)
+train_dataset = train_dataset.rename_column("label", "labels")  # Rename 'label' to 'labels'
+train_dataset.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
+
 dev_dataset = dev_dataset.map(tokenize_function, batched=True)
+dev_dataset = dev_dataset.rename_column("label", "labels")  # Rename 'label' to 'labels'
+dev_dataset.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
+
 test_dataset = test_dataset.map(tokenize_function, batched=True)
+test_dataset = test_dataset.rename_column("label", "labels")  # Rename 'label' to 'labels'
+test_dataset.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
 
 # Assuming binary classification (num_labels=2)
-model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=2)
+model = BertForSequenceClassification.from_pretrained("bert-base-cased", num_labels=2)
 
 # Use a data collator for proper batching
 data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
@@ -95,6 +170,23 @@ with torch.no_grad():
 
 from sklearn.metrics import classification_report
 print(classification_report(all_labels, all_predictions))
+
+
+
+
+# Define a directory to save the model
+output_dir = "saved_cased_model"
+
+# Create the directory if it doesn't exist
+os.makedirs(output_dir, exist_ok=True)
+
+# Save the trained model and tokenizer
+model.save_pretrained(output_dir)
+tokenizer.save_pretrained(output_dir)
+
+print(f"Model saved to {output_dir}")
+
+"""
 
 
 
